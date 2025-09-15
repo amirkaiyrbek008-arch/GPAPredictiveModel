@@ -12,43 +12,74 @@ def get_user(inter):
     return user_data[inter.author.id]
 
 def percent_to_grade_point(percent: float) -> float:
-    if percent >= 90: return 4.0
-    if percent >= 80: return 3.0
-    if percent >= 70: return 2.0
-    if percent >= 60: return 1.0
+    if percent >= 95: 
+        return 4.0
+    if percent >= 90:
+        return 3.75
+    if percent >= 85: 
+        return 3.5
+    if percent >= 80:
+        return 3.0
+    if percent >= 75:
+        return 2.5
+    if percent >= 70: 
+        return 2.0
+    if percent >= 65:
+        return 1.5
+    if percent >= 60: 
+        return 1.0
     return 0.0
 
 def calculate_predicted(data: dict) -> float:
     predicted_score = 0
-    for cat, info in data.items():
-        if cat == "Credits":
+    avg = []
+    for key, info in data.items():
+        if key == "Credits":
             continue
         percent = info["percent"]
-        if cat == "Participation":
+        if key == "Participation":
             v = info.get("value", 0)
-            predicted_score += (float(v) / 100) * percent
-        elif cat in ["Assignments", "Quiz"]:
+            predicted_score += v * percent/100
+            avg.append(v)
+        elif key in ["Assignments", "Quiz"]:
+            total = info.get("total")
             done = info.get("done", 0)
             failed = info.get("failed", 0)
-            total = info.get("total") or info.get("amount", 0)
-            if total > 0:
-                vals = []
-                for i in range(total):
-                    if done > 0:
-                        vals.append(100); done -= 1
-                    elif failed > 0:
-                        vals.append(0); failed -= 1
-                    else:
-                        vals.append(50)
-                predicted_score += (sum(vals) / len(vals)) / 100 * percent
-        elif cat == "MidTerm":
-            tests = [info.get("test1"), info.get("test2")]
-            tests = [float(x) for x in tests if x is not None]
-            avg = sum(tests) / len(tests) if tests else 50
-            predicted_score += (avg / 100) * percent
-        elif cat == "Final":
-            v = info.get("value", 30)
-            predicted_score += (float(v) / 100) * percent
+            ongoing = total - failed
+            d = 0
+            f = 0
+            if total > 0 and (done > 0 or failed > 0):
+                    pattern = [1] * done + [0] * failed 
+                    idx = 0
+                    for i in range(total):
+                        if pattern[idx] == 1:
+                            d += 1
+                        else:
+                            f += 1
+                        idx = (idx + 1) % len(pattern)
+            predicted_score += (d/total) * percent
+            avg.append(d/total * 100)
+        elif key == "Mid-Term":
+            if info["test1"] == "n" and info["test2"] == "n":
+                predicted_score += (sum(avg)/len(avg)) * (percent*2)
+                avg.append(sum(avg)/len(avg))
+            elif info["test1"] == "n":
+                score = int(info["test2"])
+                predicted_score += (score / 100) * percent*2
+                avg.append(score)
+            elif info["test2"] == "n":
+                score = int(info["test1"])
+                predicted_score += (score / 100) * percent*2
+                avg.append(score)
+            else:
+                predicted_score += (int(info["test1"]) + int(info["test2"]))/200 * percent
+                avg.append((int(info["test1"]) + int(info["test2"]))/2)
+        elif key == "Final":
+            v = info.get("value", predicted_score)
+            if v == 'n':
+                predicted_score += ((sum(avg)/len(avg)) * float(percent))/100
+            else:
+                predicted_score += (int(v) / 100) * float(percent)
     return round(predicted_score, 2)
 
 def calculate_overall_gpa(user_subjects_data: dict) -> float | None:
@@ -57,7 +88,7 @@ def calculate_overall_gpa(user_subjects_data: dict) -> float | None:
     for subj, data in user_subjects_data.items():
         if "Credits" not in data:
             continue
-        credits = data["Credits"]
+        credits = float(data.get("value", 0))
         total_credits += credits
         avg_grade = calculate_predicted(data)
         total_points += percent_to_grade_point(avg_grade) * credits
@@ -69,82 +100,155 @@ class ModalParticipation(Modal):
     def __init__(self):
         components = [
             TextInput(label="Subject Name", custom_id="subject", style=TextInputStyle.short, required=True),
-            TextInput(label="Participation Percentage", custom_id="participation_percent", style=TextInputStyle.short, required=True),
-            TextInput(label="Completed (%)", custom_id="participation_value", style=TextInputStyle.short, required=True)
+            TextInput(label="Participation Percentage", custom_id="percent", style=TextInputStyle.short, required=True),
+            TextInput(label="Completed (%)", custom_id="value", style=TextInputStyle.short, required=True)
         ]
         super().__init__(title="Participation", components=components)
 
     async def callback(self, inter: disnake.ModalInteraction):
         subj = inter.text_values["subject"]
-        percent = inter.text_values["participation_percent"]
-        value = inter.text_values["participation_value"]
-        await inter.response.send_message(f"✅ Participation saved for {subj} ({value}% of {percent}%)", ephemeral=True)
+        percent = float(inter.text_values["percent"])
+        value = float(inter.text_values["value"])
 
+        user = get_user(inter)
+        if subj not in user:
+            user[subj] = {}
+
+        user[subj]["Participation"] = {
+            "percent": percent,
+            "value": value
+        }
+
+        await inter.response.send_message(
+            f"Participation saved for {subj}", 
+            ephemeral=True
+        )
 
 class ModalAssignments(Modal):
     def __init__(self):
         components = [
             TextInput(label="Subject Name", custom_id="subject", style=TextInputStyle.short, required=True),
-            TextInput(label="Assignments Percentage", custom_id="assignments_percent", style=TextInputStyle.short, required=True),
-            TextInput(label="Total Assignments", custom_id="assignments_total", style=TextInputStyle.short, required=True),
-            TextInput(label="Completed Assignments", custom_id="assignments_done", style=TextInputStyle.short, required=True),
-            TextInput(label="Failed Assignments", custom_id="assignments_failed", style=TextInputStyle.short, required=True)
+            TextInput(label="Assignments Percentage", custom_id="percent", style=TextInputStyle.short, required=True),
+            TextInput(label="Total Assignments", custom_id="total", style=TextInputStyle.short, required=True),
+            TextInput(label="Completed Assignments", custom_id="done", style=TextInputStyle.short, required=True),
+            TextInput(label="Failed Assignments", custom_id="failed", style=TextInputStyle.short, required=True)
         ]
         super().__init__(title="Assignments", components=components)
 
     async def callback(self, inter: disnake.ModalInteraction):
         subj = inter.text_values["subject"]
-        done = inter.text_values["assignments_done"]
-        total = inter.text_values["assignments_total"]
-        await inter.response.send_message(f"✅ Assignments saved for {subj} ({done}/{total})", ephemeral=True)
+        percent = float(inter.text_values["percent"])
+        total = int(inter.text_values["total"])
+        done = int(inter.text_values["done"])
+        failed = int(inter.text_values["failed"])
+
+        user = get_user(inter)
+        if subj not in user:
+            user[subj] = {}
+
+        user[subj]["Assignments"] = {
+            "percent": percent,
+            "total": total,
+            "done": done,
+            "failed": failed
+        }
+
+        await inter.response.send_message(
+            f"Assignments saved for {subj} ({done}/{total})", 
+            ephemeral=True
+        )
 
 
 class ModalQuiz(Modal):
     def __init__(self):
         components = [
             TextInput(label="Subject Name", custom_id="subject", style=TextInputStyle.short, required=True),
-            TextInput(label="Quiz Percentage", custom_id="quiz_percent", style=TextInputStyle.short, required=True),
-            TextInput(label="Total Quizzes", custom_id="quiz_amount", style=TextInputStyle.short, required=True),
-            TextInput(label="Completed Quizzes", custom_id="quiz_done", style=TextInputStyle.short, required=True),
-            TextInput(label="Failed Quizzes", custom_id="quiz_failed", style=TextInputStyle.short, required=True)
+            TextInput(label="Quiz Percentage", custom_id="percent", style=TextInputStyle.short, required=True),
+            TextInput(label="Total Quizzes", custom_id="total", style=TextInputStyle.short, required=True),
+            TextInput(label="Completed Quizzes", custom_id="done", style=TextInputStyle.short, required=True),
+            TextInput(label="Failed Quizzes", custom_id="failed", style=TextInputStyle.short, required=True)
         ]
         super().__init__(title="Quiz", components=components)
 
     async def callback(self, inter: disnake.ModalInteraction):
         subj = inter.text_values["subject"]
-        done = inter.text_values["quiz_done"]
-        total = inter.text_values["quiz_amount"]
-        await inter.response.send_message(f"✅ Quiz saved for {subj} ({done}/{total})", ephemeral=True)
+        percent = float(inter.text_values["percent"])
+        total = int(inter.text_values["total"])
+        done = int(inter.text_values["done"])
+        failed = int(inter.text_values["failed"])
+
+        user = get_user(inter)
+        if subj not in user:
+            user[subj] = {}
+
+        user[subj]["Quiz"] = {
+            "percent": percent,
+            "total": total,
+            "done": done,
+            "failed": failed
+        }
+
+        await inter.response.send_message(
+            f"Quiz saved for {subj} ({done}/{total})", 
+            ephemeral=True
+        )
+
 
 class ModalMidTerm(Modal):
     def __init__(self):
         components = [
             TextInput(label="Subject Name", custom_id="subject", style=TextInputStyle.short, required=True),
-            TextInput(label="Mid-Term Percentage", custom_id="mid_percent", style=TextInputStyle.short, required=True),
-            TextInput(label="Mid-Term 1 (%)", custom_id="mid_test1", style=TextInputStyle.short, required=True),
-            TextInput(label="Mid-Term 2 (%) (optional)", custom_id="mid_test2", style=TextInputStyle.short, required=False)
+            TextInput(label="Mid-Term Percentage", custom_id="percent", style=TextInputStyle.short, required=True),
+            TextInput(label="Mid-Term 1 (%, or n if you don't have", custom_id="test1", style=TextInputStyle.short, required=True),
+            TextInput(label="Mid-Term 2 (%, or n if you don't have", custom_id="test2", style=TextInputStyle.short, required=True)
         ]
         super().__init__(title="Mid-Term", components=components)
 
     async def callback(self, inter: disnake.ModalInteraction):
         subj = inter.text_values["subject"]
-        test1 = inter.text_values["mid_test1"]
-        test2 = inter.text_values["mid_test2"] or "N/A"
-        await inter.response.send_message(f"✅ Mid-Term saved for {subj} (Test1: {test1}, Test2: {test2})", ephemeral=True)
+        percent = float(inter.text_values["percent"])
+        test1 = inter.text_values["test1"]
+        test2 = inter.text_values["test2"]
+
+        user = get_user(inter)
+        if subj not in user:
+            user[subj] = {}
+
+        user[subj]["Mid-Term"] = {
+            "percent": percent,
+            "test1": test1,
+            "test2": test2
+        }
+
+        await inter.response.send_message(
+            f"Mid-Term Tests saved for {subj} (Test 1 - {test1}| Test 2 - {test2})", 
+            ephemeral=True
+        )
 
 class ModalFinal(Modal):
     def __init__(self):
         components = [
             TextInput(label="Subject Name", custom_id="subject", style=TextInputStyle.short, required=True),
-            TextInput(label="Final Percentage", custom_id="final_percent", style=TextInputStyle.short, required=True),
-            TextInput(label="Final Test (%)", custom_id="final_test", style=TextInputStyle.short, required=False)
+            TextInput(label="Final Percentage", custom_id="percent", style=TextInputStyle.short, required=True),
+            TextInput(label="Final Test (%, or n if you don't have)", custom_id="final", style=TextInputStyle.short, required=False)
         ]
-        super().__init__(title="Final Test", components=components)
+        super().__init__(title="Final", components=components)
 
     async def callback(self, inter: disnake.ModalInteraction):
         subj = inter.text_values["subject"]
-        value = inter.text_values["final_test"] or "N/A"
-        await inter.response.send_message(f"✅ Final saved for {subj} (Score: {value})", ephemeral=True)
+        percent = inter.text_values["percent"]
+        value = inter.text_values["final"]
+
+        user = get_user(inter)
+        if subj not in user:
+            user[subj] = {}
+
+        user[subj]["Final"] = {
+            "percent": percent,
+            "value": value 
+            }
+        await inter.response.send_message(f"Final saved for {subj} (Score: {value})", ephemeral=True)
+
 
 class ModalCredits(Modal):
     def __init__(self):
@@ -157,7 +261,15 @@ class ModalCredits(Modal):
     async def callback(self, inter: disnake.ModalInteraction):
         subj = inter.text_values["subject"]
         credits = inter.text_values["credits"]
-        await inter.response.send_message(f"✅ Credits saved for {subj} ({credits})", ephemeral=True)
+
+        user = get_user(inter)
+        if subj not in user:
+            user[subj] = {}
+
+        user[subj]["Credits"] = {
+            "Credits": credits
+        }
+        await inter.response.send_message(f"Credits saved for {subj} ({credits})", ephemeral=True)
 class MyView(disnake.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -177,16 +289,28 @@ class MyView(disnake.ui.View):
     async def calculate(self, _, inter):
         user = get_user(inter)
         results = []
+
         for subj, data in user.items():
-            avg = calculate_predicted(data)
-            results.append(f"{subj}: Predicted {avg:.2f}")
+            avg_grade = calculate_predicted(data)
+            results.append(
+                f" {subj}:\n"
+                f"  Predicted Procents: {avg_grade:.2f}"
+                f"  Predicted Grade Point: {percent_to_grade_point(avg_grade)}"
+            )
+
         gpa_pred = calculate_overall_gpa(user)
         if gpa_pred is not None:
-            results.append(f"GPA: {gpa_pred:.2f}")
-        await inter.response.send_message("\n".join(results), ephemeral=True)
+            results.append(
+                f"\n GPA:\n"
+                f"  Predicted GPA: {gpa_pred:.2f}"
+            )
+
+        if results:
+            await inter.response.send_message("\n".join(results), ephemeral=True)
+        else:
+            await inter.response.send_message("]\Нет данных для расчёта", ephemeral=True)
 
 @bot.slash_command(description="Buttons")
 async def menu(inter):
     await inter.response.send_message("Select:", view=MyView())
-
-bot.run("MTQxNTIzMjE0NjE1ODc4MDQyNg.GWjcki.6UGo2t6ob-VxuhWTK0rh7FW9PJcs3yd0UMxkLc")
+bot.run("TOKEN")
