@@ -1,1 +1,9 @@
-Как работает моя модель:
+P.S. In order not to bother with this installation and use, I think it would be better for me to show a video of its use. Write to me on Telegram and I will send the video as soon as possible: @SalReI | +77019780060
+
+To call, you need to download the disnake library (pip install -U disnake). After that, you need to create an empty bot through the website: https://discord.com/developers/applications
+After creation, you need to take the bot token and paste it into bot.run("TOKEN")
+Run the Python file through the console
+
+How my model works:
+
+After starting the bot, the student must enter the /menus command. The student will have 7 buttons: Participation, Assignments, Quiz, Mid-Term Test, Final, Credits, Calculate. The first five buttons are for entering data. The sixth button enters the credit for the subject. Calculate calculates the estimated GPA for the discipline.
