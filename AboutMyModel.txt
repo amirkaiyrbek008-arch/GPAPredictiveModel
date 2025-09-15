@@ -6,4 +6,5 @@ Run the Python file through the console
 
 How my model works:
 
-After starting the bot, the student must enter the /menus command. The student will have 7 buttons: Participation, Assignments, Quiz, Mid-Term Test, Final, Credits, Calculate. The first five buttons are for entering data. The sixth button enters the credit for the subject. Calculate calculates the estimated GPA for the discipline.
+After starting the bot, the student must enter the /menus command. The student will have 7 buttons: Participation, Assignments, Quiz, Mid-Term Test, Final, Credits, Calculate. The first five buttons are for entering data. The sixth button enters the credit for the subject. Calculate calculates the estimated GPA for the discipline. 
+To work properly, student must fill the available data starting from the start(left to right).
